@@ -1,6 +1,8 @@
 import ollama 
 import whisper
 import speech_recognition as sr
+import numpy as np
+import torch
 
 from datetime import datetime, timedelta
 from queue import Queue
@@ -8,12 +10,14 @@ from time import sleep
 
 import pyaudio
 
+from ollamaHelper import init_responder, responder
+
 def get_user_input():
     user_input = input("\n")
     return user_input
 
-# Get audio from mic
-whisper_model = whisper.load_model("tiny")
+# Load Whisper
+whisper_model = whisper.load_model("base")
 
 #Time when last phrase was retrieved from queue
 phrase_time = None
@@ -24,17 +28,13 @@ data_queue = Queue()
 recorder = sr.Recognizer()
 recorder.energy_threshold = 1000
 recorder.dynamic_energy_threshold = False
-
-p = pyaudio.PyAudio()
-for i in range(p.get_device_count()):
-    print(p.get_device_info_by_index(i))
-
-p.terminate
-exit(1)
+ 
 # List microphones
-print(enumerate(sr.Microphone.list_microphone_names()))
+# for name in  enumerate(sr.Microphone.list_microphone_names()):
+#     print(name)
 
-microphone = input("\n")
+# mic_name = input("\n")
+mic_name = "default"
 
 for index, name in enumerate(sr.Microphone.list_microphone_names()):
     if mic_name in name:
@@ -54,6 +54,9 @@ recorder.listen_in_background(source, callback_record, phrase_time_limit=5)
 phrase_timeout = 3
 transcription = ['']
 
+
+print("\n\n Recording started \n\n")
+init_responder()
 while True:
     try:
         now = datetime.utcnow()
@@ -71,49 +74,18 @@ while True:
             audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
 
             #Transcribe
-            result = whisper_model.transcribe(audio_np, fp=torch.cuda.is_available(), device="cuda")
+            options = whisper.DecodingOptions()
+            result = whisper_model.transcribe(audio_np)
             text = result['text'].strip()
 
-            if phrase_complete:
-                transaciption.append(text)
+            if phrase_complete and len(text) > 0:
+                print("**"+text+"**",flush=True)
+                val = responder(text)
+                if val == False:
+                    break
 
-            for line in transcription:
-                    print(line)
-            # Flush
             print('', end='', flush=True)
         else:
             sleep(0.25)
     except KeyboardInterrupt:
         break
-
-
-#
-# stream = ollama.chat(
-#         model="responder",
-#         messages=[{
-#             'role': 'user',
-#             'content': "**START CALL**"
-#         }],
-#         stream=True
-#     )
-#
-#
-# for chuck in stream:
-#     print(chuck['message']['content'], end = "", flush=True)
-#
-#
-# while True:
-#     user_input = get_user_input()
-#     stream = ollama.chat(
-#             model="responder",
-#             messages=[{
-#                 'role': 'user',
-#                 'content': user_input 
-#             }],
-#             stream=True
-#     )
-#     for chuck in stream:
-#         print(chuck['message']['content'], end = "", flush=True)
-#     
-#     if user_input == "**END CALL**":
-#         break
