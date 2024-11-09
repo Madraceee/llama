@@ -36,10 +36,12 @@ recorder.dynamic_energy_threshold = False
 # mic_name = input("\n")
 mic_name = "default"
 
-for index, name in enumerate(sr.Microphone.list_microphone_names()):
-    if mic_name in name:
-        source = sr.Microphone(sample_rate=16000, device_index = index)
-        break
+# for index, name in enumerate(sr.Microphone.list_microphone_names()):
+#     if mic_name in name:
+#         source = sr.Microphone(sample_rate=16000, device_index = index)
+#         break
+
+source=sr.Microphone(sample_rate=16000)
 
 
 with source:

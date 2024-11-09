@@ -15,14 +15,17 @@ def init_responder():
         print(chuck['message']['content'], end = "", flush=True)
 
 
+messages=[]
 def responder(user_input):
-    response = ollama.chat(
-            model="responder",
-            messages=[{
+    messages.append({
                 'role': 'user',
                 'content': user_input 
-            }],
+            })
+    response = ollama.chat(
+            model="responder",
+            messages=messages,
     )
+    messages.append(response)
     print(response['message']['content'], end = "", flush=True)
     
     if "**END CALL**" in response['message']['content']:
