@@ -1,11 +1,16 @@
 import cv2
 import time
 import os
+import shutil
 
 from ollamaHelper import init_responder, image_responder, clear_messages
 
 # Directory to save images
 output_dir = "captured_frames"
+if os.path.exists(output_dir) and os.path.isdir(output_dir):
+    # Delete the folder and its contents
+    shutil.rmtree(output_dir)
+    print(f"Folder '{output_dir}' has been deleted.")
 os.makedirs(output_dir, exist_ok=True)
 
 # Open the camera
@@ -46,8 +51,11 @@ try:
 
         if frame_count % 3 == 0: 
             image_list = []
-            image_list.append(os.path.join(output_dir,f"frame_{frame_count-1}.jpg"))
+            image = os.path.join(output_dir,f"frame_{frame_count-1}.jpg")
+            image = "./"+image
+            image_list.append(image)
 
+            print("Sending image_list", image_list)
             response = image_responder(image_list)
             if "END" in reponse:
                 break
