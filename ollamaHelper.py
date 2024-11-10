@@ -1,3 +1,4 @@
+import asyncio
 import ollama
 
 def init_responder(shouldPrint=True):
@@ -33,10 +34,11 @@ def responder(user_input, shouldPrint = True):
         return [False, response['message']['content']]
     return [True, response['message']['content']]
 
-def image_responder(images , shouldPrint = True):
+async def image_responder(images , shouldPrint = True):
+    await asyncio.sleep(1)
     messages.append({
                 'role': 'SYSTEM',
-                'content': "The caller is sharing image feed while they are in distress, use this to update your knowledge base.",
+                'content': "The caller is sharing image feed while they are in distress, use this to update your knowledge base and describe the captured frames.",
                 'images': images
             })
     response = ollama.chat(

@@ -3,11 +3,11 @@ import ollama
 from queue import Queue
 import json
 
-# # Queue to store threat tickets
-# threat_tickets = Queue()
+threat_conversation = []
 
 def init_threat_responder():
     # Initialize threat monitor with START marker
+    threat_conversation = []
     ollama.chat(
         model="threat",
         messages=[{
@@ -15,9 +15,6 @@ def init_threat_responder():
             'content': ""
         }]
     )
-
-# messages = []
-threat_conversation = []
 
 async def threat_responder(user_input):
     await asyncio.sleep(1)
@@ -39,15 +36,7 @@ async def threat_responder(user_input):
     # print("Threat Response:", threat_response['message']['content'], end="", flush=True)
 
     if "**END CALL**" in threat_response['message']['content']:
-        return False
-    return True
-
-# def get_threat_tickets():
-#     """
-#     Retrieve all available threat tickets from the queue.
-#     Returns a list of threat tickets.
-#     """
-#     tickets = []
-#     while not threat_tickets.empty():
-#         tickets.append(threat_tickets.get())
-#     return tickets
+        threat_response_sent = [False]
+        return threat_response_sent
+    threat_response_sent = [True, threat_response['message']['content']]
+    return threat_response_sent

@@ -1,86 +1,270 @@
+import asyncio
 import cv2
 import time
 import os
 import shutil
-
-from ollamaHelper import init_responder, image_responder, clear_messages
+import threading
+import warnings
+import whisper
+import speech_recognition as sr
+import numpy as np
+import torch
+import json
+from datetime import datetime, timedelta
+from queue import Queue
 from PIL import Image, ImageTk
+from text import transliterate_text
+from text_to_speech import text_to_speech
+from ollamaHelper import init_responder, image_responder, responder, clear_messages
+from threatHelper import init_threat_responder, threat_responder
 
-def video(frame_label = None):
-    # Directory to save images
-    output_dir = "captured_frames"
-    if os.path.exists(output_dir) and os.path.isdir(output_dir):
-        # Delete the folder and its contents
-        shutil.rmtree(output_dir)
-        print(f"Folder '{output_dir}' has been deleted.")
-    os.makedirs(output_dir, exist_ok=True)
+class VideoHandler:
+    def __init__(self):
+        self.is_running = False
+        self.cap = None
+        self.video_thread = None
+        self.audio_thread = None
+        self.frame_label = None
+        self.output_dir = "captured_frames"
+        self._lock = threading.Lock()
+        
+        # Audio components
+        self.data_queue = Queue()
+        self.recorder = None
+        self.stop_listening = None
+        self.whisper_model = None
+        
+        # Ticket components
+        self.user_id = ""
+        self.ticket = {}
+        
+    def start_video(self, frame_label):
+        if self.is_running:
+            return False
+            
+        # Generate user ID and initialize ticket
+        self.user_id = datetime.now().strftime("%Y%m%d%H%M%S%f")[:17]
+        self.ticket[self.user_id] = []
+            
+        # Set up output directory
+        if os.path.exists(self.output_dir) and os.path.isdir(self.output_dir):
+            shutil.rmtree(self.output_dir)
+        os.makedirs(self.output_dir, exist_ok=True)
+        
+        # Initialize video capture
+        self.cap = cv2.VideoCapture(0)
+        if not self.cap.isOpened():
+            print("Cannot open camera")
+            return False
+            
+        self.frame_label = frame_label
+        self.is_running = True
+        
+        # Initialize audio components
+        self._setup_audio()
+        
+        # Initialize ollama and threat responder
+        clear_messages()
+        init_responder()
+        init_threat_responder()
+        
+        # Start video and audio threads
+        self.video_thread = threading.Thread(target=self._video_process)
+        self.audio_thread = threading.Thread(target=self._audio_process)
+        self.video_thread.daemon = True
+        self.audio_thread.daemon = True
+        self.video_thread.start()
+        self.audio_thread.start()
+        
+        return True
+        
+    def _setup_audio(self):
+        """Initialize audio components"""
+        # Filter out warnings
+        warnings.filterwarnings("ignore", category=UserWarning)
+        torch.set_warn_always(False)
 
-    # Open the camera
-    cap = cv2.VideoCapture(0)  # 0 is usually the default camera
-    if not cap.isOpened():
-        print("Cannot open camera")
-        exit(1)
+        # Load Whisper model
+        self.whisper_model = whisper.load_model("base")
+        
+        # Setup recorder
+        self.recorder = sr.Recognizer()
+        self.recorder.energy_threshold = 1000
+        self.recorder.dynamic_energy_threshold = False
 
-    # Set the frame rate capture interval
-    frame_interval = 0.333 # in seconds
+        # Setup microphone
+        source = sr.Microphone(sample_rate=16000)
+        with source:
+            self.recorder.adjust_for_ambient_noise(source)
 
-    # Capture and save frames every 1 second
-    last_saved_time = time.time()  # To track time since last save
-    frame_count = 0  # To count the number of frames captured
+        # Setup background listener
+        self.stop_listening = self.recorder.listen_in_background(
+            source, 
+            self._audio_callback, 
+            phrase_time_limit=5
+        )
+        
+    def _audio_callback(self, _, audio: sr.AudioData) -> None:
+        """Callback for audio capture"""
+        if self.is_running:
+            data = audio.get_raw_data()
+            self.data_queue.put(data)
+        
+    def stop_video(self):
+        with self._lock:
+            if not self.is_running:
+                return
+                
+            self.is_running = False
+            
+            # Stop audio recording
+            if self.stop_listening:
+                self.stop_listening(wait_for_stop=False)
+            
+            # Join threads if we're not in them
+            if threading.current_thread() != self.video_thread:
+                if self.video_thread:
+                    self.video_thread.join(timeout=1.0)
+            if threading.current_thread() != self.audio_thread:
+                if self.audio_thread:
+                    self.audio_thread.join(timeout=1.0)
+            
+            if self.cap and self.cap.isOpened():
+                self.cap.release()
+            
+            self.data_queue.queue.clear()
+            cv2.destroyAllWindows()
+            print("\n\n Video and Audio stopped \n\n")
+            with open("ticket_log.json", "w+") as f:
+                f.write(json.dumps(self.ticket))
+            self.ticket = {}
+    
+    def _audio_process(self):
+        """Process audio in separate thread"""
+        print("\n\n Audio Recording started \n\n")
+        phrase_time = None
+        phrase_timeout = 3
+        
+        initial_response = init_responder()
+        if initial_response[0]:
+            text_to_speech(initial_response[1])
+        
+        while self.is_running:
+            try:
+                now = datetime.utcnow()
+                
+                if not self.data_queue.empty():
+                    phrase_complete = False
+                    if phrase_time and now - phrase_time > timedelta(seconds=phrase_timeout):
+                        phrase_complete = True
 
-    # Clear ollama context
-    clear_messages()
-    # Start ollama
-    init_responder()
-    def stop_video():
-        cap.release()
-        cv2.destroyAllWindows()
-    def start_video():
+                    phrase_time = now
+                    audio_data = b''.join(self.data_queue.queue)
+                    self.data_queue.queue.clear()
+
+                    audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
+
+                    result = self.whisper_model.transcribe(audio_np)
+                    text = result['text'].strip()
+
+                    if phrase_complete and len(text) > 0:
+                        print("\n**  "+text+"  **", flush=True)
+                        val = responder(f"[VIDEO CALL] {text}")
+                        if val[0] == False:
+                            self.stop_video()
+                            break
+
+                        tranliterated_text = transliterate_text(val[1])
+                        text_to_speech(tranliterated_text)
+                        
+                        # Process threat and update ticket
+                        threat = asyncio.run(threat_responder(text))
+                        if threat[0] == True:
+                            self.ticket[self.user_id].append(threat[1])
+                            with open("ticket_log.json", "w") as f:
+                                f.write(json.dumps(self.ticket))
+                            print("******** TICKET:", self.ticket[self.user_id], "********")
+                else:
+                    time.sleep(0.25)
+            except Exception as e:
+                print(f"Error in audio processing: {e}")
+                continue
+        
+    def _video_process(self):
+        """Process video in separate thread"""
+        print("\n\n Video started \n\n")
+        frame_interval = 1.0
+        last_saved_time = time.time()
+        frame_count = 0
+        last_process_time = time.time()
+        
         try:
-            last_saved_time = time.time()
-            frame_count = 0
-            frame_interval = 0.333
-            while True:
-                # Read the frame from the camera
-                ret, frame = cap.read()
+            while self.is_running:
+                ret, frame = self.cap.read()
                 
                 if not ret:
-                    print("Failed to grab frame.")
-                    break
+                    print("Failed to grab frame")
+                    continue
+                    
+                # Update the GUI with the current frame
+                if self.frame_label is not None:
+                    try:
+                        frame = cv2.resize(frame, (400, 300))
+                        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        img = Image.fromarray(frame_rgb)
+                        imgtk = ImageTk.PhotoImage(image=img)
+                        self.frame_label.after(0, self._update_label, imgtk)
+                    except Exception as e:
+                        print(f"Error updating frame: {e}")
+                        continue
                 
-                # Check if 1 second has passed since the last save
+                # Save and process frames at intervals
                 current_time = time.time()
                 if current_time - last_saved_time >= frame_interval:
-                    # Save the current frame as an image
-                    frame_filename = os.path.join(output_dir, f"frame_{frame_count}.jpg")
-                    cv2.imwrite(frame_filename, frame)
-                    frame_count += 1
-                    last_saved_time = current_time  # Reset last save time
-
-                if frame_label is not None:
-                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    img = Image.fromarray(frame)
-                    imgtk = ImageTk.PhotoImage(image=img)           
-                    frame_label.imgtk = imgtk  # Keep a reference to avoid garbage collection
-                    frame_label.configure(image=imgtk)
-                    frame_label.update()
-
-                if frame_count % 3 == 0: 
-                    image_list = []
-                    image = os.path.join(output_dir,f"frame_{frame_count-1}.jpg")
-                    image = "./"+image
-                    image_list.append(image)
-
-                    print("Sending image_list", image_list)
-                    if frame_count % 10:
-                        continue
+                    try:
+                        frame_filename = os.path.join(self.output_dir, f"frame_{frame_count}.jpg")
+                        cv2.imwrite(frame_filename, frame)
+                        frame_count += 1
+                        last_saved_time = current_time
                         
-
-                    #response = image_responder(image_list)
-                    # if response[0] is False:
-                    #     break
+                        if frame_count % 20 == 0 and (current_time - last_process_time) >= 5.0:
+                            image_path = f"./{self.output_dir}/frame_{frame_count-1}.jpg"
+                            # print(f"Processing frame: {image_path}")
+                            
+                            try:
+                                # Process frame and check for threats
+                                response = asyncio.run(image_responder([image_path]))
+                                last_process_time = current_time
+                                
+                                # Update ticket if threat is detected in the video
+                                if "[THREAT]" in response:
+                                    self.ticket[self.user_id].append({
+                                        "type": "video_threat",
+                                        "frame": image_path,
+                                        "timestamp": str(datetime.now()),
+                                        "details": response
+                                    })
+                                    print("******** VIDEO TICKET:", self.ticket[self.user_id], "********")
+                                    
+                            except Exception as e:
+                                print(f"Error in image processing: {e}")
+                                
+                    except Exception as e:
+                        print(f"Error saving frame: {e}")
+                        continue
+                
+                time.sleep(0.01)
+                
+        except Exception as e:
+            print(f"Error in video processing: {e}")
         finally:
-           cap.release()
-           cv2.destroyAllWindows()
-
-    return [start_video,stop_video]
+            with self._lock:
+                if self.cap and self.cap.isOpened():
+                    self.cap.release()
+                cv2.destroyAllWindows()
+            
+    def _update_label(self, imgtk):
+        """Thread-safe method to update the GUI label"""
+        if self.frame_label and self.is_running:
+            self.frame_label.imgtk = imgtk
+            self.frame_label.configure(image=imgtk)

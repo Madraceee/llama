@@ -23,4 +23,4 @@ def text_to_speech(mytext):
     myobj.save("welcome.mp3")
 
     # # Playing the converted file
-    #os.system("afplay welcome.mp3")
+    os.system("afplay welcome.mp3")
