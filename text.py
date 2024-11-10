@@ -1,18 +1,38 @@
-from transformers import pipeline
+import ollama
+import os
 
-from ollamaHelper import init_responder, responder
+from ollamaHelper import init_responder, responder, clear_messages
 
+def get_user_input():
+    user_input = input("\n")
+    return user_input
 
-init_responder()
+def start_responder():
+    init_responder(shouldPrint = False)
+    clear_messages()
 
-while True:
-    message = input("\n>")
-    messages = [
-    {"role": "system", "content": "You are a professinal translator. Tranlate the given language to english"},
-    {"role": "user", "content": message},
-]
-    pipe = pipeline("text-generation", model="lightblue/suzume-llama-3-8B-multilingual")
-    translated_message = pipe(messages)
-    
-    responder(translated_message)
-    break
+def get_response(input):
+    # Translation?
+    response = responder(input, False)
+    return response
+
+def main():
+    started = False
+    while True:
+        os.system("clear")
+        print("991 Assistant\n",flush = True)
+        user_input = input("> ")
+        if "**START CALL**" in user_input:
+            started = True
+
+        if started:
+            start_responder()
+        while started:
+            user_input = input("> ")
+            response = get_response(user_input)
+            print(response)
+            if "END" in user_input or "END" in response:
+                started = False
+        break
+
+main()

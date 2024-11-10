@@ -1,22 +1,22 @@
 import ollama
 
-def init_responder():
-    stream = ollama.chat(
+def init_responder(shouldPrint=True):
+    response = ollama.chat(
         model="responder",
         messages=[{
             'role': 'user',
             'content': "**START CALL**"
         }],
-        stream=True
     )
 
+    if shouldPrint:
+        print(response['message']['content'], end = "", flush=True)
 
-    for chuck in stream:
-        print(chuck['message']['content'], end = "", flush=True)
+    return response['message']['content']
 
 
 messages=[]
-def responder(user_input):
+def responder(user_input, shouldPrint = True):
     messages.append({
                 'role': 'user',
                 'content': user_input 
@@ -26,8 +26,9 @@ def responder(user_input):
             messages=messages,
     )
     messages.append(response)
-    print(response['message']['content'], end = "", flush=True)
-    
-    if "**END CALL**" in response['message']['content']:
-        return False
-    return True
+    if shouldPrint:
+        print(response['message']['content'], end = "", flush=True)
+    return response['message']['content']
+
+def clear_messages():
+    messages = []
