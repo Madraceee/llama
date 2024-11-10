@@ -16,8 +16,14 @@ from text_to_speech import text_to_speech
 from ollamaHelper import init_responder, responder
 from threatHelper import init_threat_responder, threat_responder
 
+warnings.filterwarnings("ignore", category=FutureWarning, module="whisper")
+warnings.filterwarnings("ignore", category=UserWarning, module="whisper")
+
 class AudioHandler:
     def __init__(self):
+        warnings.filterwarnings("ignore", category=UserWarning)
+        warnings.filterwarnings("ignore", category=FutureWarning)
+
         self.is_running = False
         self.data_queue = Queue()
         self.audio_thread = None
@@ -47,8 +53,12 @@ class AudioHandler:
         if self.audio_thread:
             self.audio_thread.join(timeout=1.0)
         self.data_queue.queue.clear()
-        with open("ticket_log.json", "w+") as f:
-            f.write(json.dumps(self.ticket))
+        
+        # Save final ticket state if there are any threats
+        if self.ticket[self.user_id]:
+            with open("ticket_log.json", "w+") as f:
+                json.dump(self.ticket, f, indent=2)
+                
         self.ticket = {}
                                         
     def _audio_process(self):
@@ -100,7 +110,6 @@ class AudioHandler:
 
                     audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
 
-                    options = whisper.DecodingOptions()
                     result = whisper_model.transcribe(audio_np)
                     text = result['text'].strip()
 
@@ -113,11 +122,23 @@ class AudioHandler:
 
                         tranliterated_text = transliterate_text(val[1])
                         text_to_speech(tranliterated_text)
+                        
+                        # Process threat and update ticket
                         threat = asyncio.run(threat_responder(text))
-                        # print(threat[0])
                         if threat[0] == True:
-                            self.ticket[self.user_id].append(threat[1])
-                            print("******** TICKET:", self.ticket[self.user_id], "********")
+                            # Format the ticket entry
+                            ticket_entry = {
+                                "type": "audio_threat",
+                                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f"),
+                                "message": text,
+                                "details": threat[1]
+                            }
+                            self.ticket[self.user_id].append(ticket_entry)
+                            
+                            # Save ticket immediately
+                            with open("ticket_log.json", "w+") as f:
+                                json.dump(self.ticket, f, indent=2)
+                            # print("******** TICKET:", self.ticket[self.user_id], "********")
 
                     print('', end='', flush=True)
                     
