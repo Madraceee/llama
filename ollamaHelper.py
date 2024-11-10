@@ -38,7 +38,7 @@ async def image_responder(images , shouldPrint = True):
     await asyncio.sleep(1)
     messages.append({
                 'role': 'SYSTEM',
-                'content': "The caller is sharing image feed while they are in distress, use this to update your knowledge base and describe the captured frames.",
+                'content': "The caller is sharing image feed while they are in distress, use this to update your knowledge base and describe the captured frames. I want you to also summarise what you see in the images and also what you hear from the caller.",
                 'images': images
             })
     response = ollama.chat(

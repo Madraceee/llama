@@ -44,7 +44,7 @@ class VideoHandler:
             
         # Generate user ID and initialize ticket
         self.user_id = datetime.now().strftime("%Y%m%d%H%M%S%f")[:17]
-        self.ticket[self.user_id] = []
+        self.ticket = {self.user_id: []}  # Changed to match ticket_log.json format
             
         # Set up output directory
         if os.path.exists(self.output_dir) and os.path.isdir(self.output_dir):
@@ -79,25 +79,19 @@ class VideoHandler:
         return True
         
     def _setup_audio(self):
-        """Initialize audio components"""
-        # Filter out warnings
         warnings.filterwarnings("ignore", category=UserWarning)
         torch.set_warn_always(False)
 
-        # Load Whisper model
         self.whisper_model = whisper.load_model("base")
         
-        # Setup recorder
         self.recorder = sr.Recognizer()
         self.recorder.energy_threshold = 1000
         self.recorder.dynamic_energy_threshold = False
 
-        # Setup microphone
         source = sr.Microphone(sample_rate=16000)
         with source:
             self.recorder.adjust_for_ambient_noise(source)
 
-        # Setup background listener
         self.stop_listening = self.recorder.listen_in_background(
             source, 
             self._audio_callback, 
@@ -105,7 +99,6 @@ class VideoHandler:
         )
         
     def _audio_callback(self, _, audio: sr.AudioData) -> None:
-        """Callback for audio capture"""
         if self.is_running:
             data = audio.get_raw_data()
             self.data_queue.put(data)
@@ -117,11 +110,9 @@ class VideoHandler:
                 
             self.is_running = False
             
-            # Stop audio recording
             if self.stop_listening:
                 self.stop_listening(wait_for_stop=False)
             
-            # Join threads if we're not in them
             if threading.current_thread() != self.video_thread:
                 if self.video_thread:
                     self.video_thread.join(timeout=1.0)
@@ -135,12 +126,26 @@ class VideoHandler:
             self.data_queue.queue.clear()
             cv2.destroyAllWindows()
             print("\n\n Video and Audio stopped \n\n")
-            with open("ticket_log.json", "w+") as f:
-                f.write(json.dumps(self.ticket))
+            
+            # Save final ticket state if there are any threats
+            if self.ticket[self.user_id]:
+                try:
+                    # Load existing tickets if any
+                    if os.path.exists("ticket_log.json"):
+                        with open("ticket_log.json", "r") as f:
+                            existing_tickets = json.load(f)
+                            existing_tickets.update(self.ticket)
+                    else:
+                        existing_tickets = self.ticket
+
+                    with open("ticket_log.json", "w") as f:
+                        json.dump(existing_tickets, f, indent=2)
+                except Exception as e:
+                    print(f"Error saving ticket: {e}")
+                    
             self.ticket = {}
     
     def _audio_process(self):
-        """Process audio in separate thread"""
         print("\n\n Audio Recording started \n\n")
         phrase_time = None
         phrase_timeout = 3
@@ -180,10 +185,31 @@ class VideoHandler:
                         # Process threat and update ticket
                         threat = asyncio.run(threat_responder(text))
                         if threat[0] == True:
-                            self.ticket[self.user_id].append(threat[1])
-                            with open("ticket_log.json", "w") as f:
-                                f.write(json.dumps(self.ticket))
-                            print("******** TICKET:", self.ticket[self.user_id], "********")
+                            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+                            ticket_entry = {
+                                "type": "video_audio_threat",
+                                "timestamp": current_time,
+                                "message": text,
+                                "details": threat[1]
+                            }
+                            self.ticket[self.user_id].append(ticket_entry)
+                            
+                            try:
+                                # Load existing tickets if any
+                                if os.path.exists("ticket_log.json"):
+                                    with open("ticket_log.json", "r") as f:
+                                        existing_tickets = json.load(f)
+                                        existing_tickets.update(self.ticket)
+                                else:
+                                    existing_tickets = self.ticket
+
+                                with open("ticket_log.json", "w") as f:
+                                    json.dump(existing_tickets, f, indent=2)
+                                    
+                                # print("******** TICKET:", self.ticket[self.user_id], "********")
+                            except Exception as e:
+                                print(f"Error saving ticket: {e}")
+                                
                 else:
                     time.sleep(0.25)
             except Exception as e:
@@ -191,7 +217,6 @@ class VideoHandler:
                 continue
         
     def _video_process(self):
-        """Process video in separate thread"""
         print("\n\n Video started \n\n")
         frame_interval = 1.0
         last_saved_time = time.time()
@@ -218,7 +243,6 @@ class VideoHandler:
                         print(f"Error updating frame: {e}")
                         continue
                 
-                # Save and process frames at intervals
                 current_time = time.time()
                 if current_time - last_saved_time >= frame_interval:
                     try:
@@ -229,22 +253,36 @@ class VideoHandler:
                         
                         if frame_count % 20 == 0 and (current_time - last_process_time) >= 5.0:
                             image_path = f"./{self.output_dir}/frame_{frame_count-1}.jpg"
-                            # print(f"Processing frame: {image_path}")
                             
                             try:
-                                # Process frame and check for threats
                                 response = asyncio.run(image_responder([image_path]))
                                 last_process_time = current_time
                                 
-                                # Update ticket if threat is detected in the video
                                 if "[THREAT]" in response:
-                                    self.ticket[self.user_id].append({
-                                        "type": "video_threat",
+                                    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+                                    ticket_entry = {
+                                        "type": "video_visual_threat",
+                                        "timestamp": current_time,
                                         "frame": image_path,
-                                        "timestamp": str(datetime.now()),
                                         "details": response
-                                    })
-                                    print("******** VIDEO TICKET:", self.ticket[self.user_id], "********")
+                                    }
+                                    self.ticket[self.user_id].append(ticket_entry)
+                                    
+                                    try:
+                                        # Load existing tickets if any
+                                        if os.path.exists("ticket_log.json"):
+                                            with open("ticket_log.json", "r") as f:
+                                                existing_tickets = json.load(f)
+                                                existing_tickets.update(self.ticket)
+                                        else:
+                                            existing_tickets = self.ticket
+
+                                        with open("ticket_log.json", "w") as f:
+                                            json.dump(existing_tickets, f, indent=2)
+                                            
+                                        print("******** VIDEO TICKET:", self.ticket[self.user_id], "********")
+                                    except Exception as e:
+                                        print(f"Error saving ticket: {e}")
                                     
                             except Exception as e:
                                 print(f"Error in image processing: {e}")
@@ -262,9 +300,8 @@ class VideoHandler:
                 if self.cap and self.cap.isOpened():
                     self.cap.release()
                 cv2.destroyAllWindows()
-            
+                
     def _update_label(self, imgtk):
-        """Thread-safe method to update the GUI label"""
         if self.frame_label and self.is_running:
             self.frame_label.imgtk = imgtk
             self.frame_label.configure(image=imgtk)
