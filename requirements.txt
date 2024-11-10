@@ -10,3 +10,4 @@ pypinyin
 gtts
 opencv-python
 tk
+pyaudio
