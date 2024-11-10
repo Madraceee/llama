@@ -12,7 +12,7 @@ def init_responder(shouldPrint=True):
     if shouldPrint:
         print(response['message']['content'], end = "", flush=True)
 
-    return response['message']['content']
+    return [True,response['message']['content']]
 
 
 messages=[]
@@ -28,7 +28,10 @@ def responder(user_input, shouldPrint = True):
     messages.append(response)
     if shouldPrint:
         print(response['message']['content'], end = "", flush=True)
-    return response['message']['content']
+
+    if "**END CALL**" in response['message']['content']:
+        return [False]
+    return [True, response['message']['content']]
 
 def image_responder(images , shouldPrint = True):
     messages.append({

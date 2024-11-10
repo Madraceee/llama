@@ -2,3 +2,9 @@ transformers
 ollama
 openai-whisper
 SpeachRecognition
+langdetect
+transliterate
+indic_transliterate
+unidecode
+pypinyin
+gtts

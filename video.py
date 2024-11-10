@@ -20,7 +20,7 @@ if not cap.isOpened():
     exit(1)
 
 # Set the frame rate capture interval
-frame_interval = 0.5  # in seconds
+frame_interval = 0.333 # in seconds
 
 # Clear ollama context
 clear_messages()
@@ -57,7 +57,7 @@ try:
 
             print("Sending image_list", image_list)
             response = image_responder(image_list)
-            if "END" in response:
+            if response[0] is False:
                 break
 
 
@@ -69,4 +69,3 @@ finally:
     # Release the capture and close any OpenCV windows
     cap.release()
     cv2.destroyAllWindows()
-
