@@ -29,15 +29,16 @@ def go_to_page(page):
 # Function for Button 1
 def button1_action():
     go_to_page(audio_frame)
-    # audio()
 
 # Function for Button 2
 def button2_action():
-    callbacks = video(camera_label)
     go_to_page(video_frame)
 
-    callbacks[0]()
+
+def start_video():
+    callbacks = video(camera_label)
     stop_video = callbacks[1]
+    callbacks[0]()
 
 # Function for Button 3
 def button3_action():
@@ -58,10 +59,15 @@ root_frame = tk.Frame(root)
 
 # Audio call page
 audio_frame = tk.Frame(root)
+audio_start_button = tk.Button(audio_frame, text="Start Call", command=audio)
+audio_start_button.pack(pady=20)
 audio_cancel_button = tk.Button(audio_frame, text="End Call", command=go_to_main)
 audio_cancel_button.pack(pady=20)
 
+# Video call page
 video_frame = tk.Frame(root)
+video_start_button = tk.Button(video_frame, text="End Call", command=start_video)
+video_start_button.pack(pady=20)
 video_cancel_button = tk.Button(video_frame, text="End Call", command=go_to_main_video)
 video_cancel_button.pack(pady=20)
 camera_label = tk.Label(video_frame)
