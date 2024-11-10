@@ -9,3 +9,5 @@ unidecode
 pypinyin
 gtts
 opencv-python
+tk
+git+https://github.com/openai/whisper.git 

@@ -25,7 +25,7 @@ def get_user_input():
     return user_input
 
 # Load Whisper
-whisper_model = whisper.load_model("base")
+whisper_model = whisper.load_model("small")
 
 #Time when last phrase was retrieved from queue
 phrase_time = None
