@@ -20,7 +20,7 @@ if not cap.isOpened():
     exit(1)
 
 # Set the frame rate capture interval
-frame_interval = 1  # in seconds
+frame_interval = 0.5  # in seconds
 
 # Clear ollama context
 clear_messages()
@@ -57,7 +57,7 @@ try:
 
             print("Sending image_list", image_list)
             response = image_responder(image_list)
-            if "END" in reponse:
+            if "END" in response:
                 break
 
 

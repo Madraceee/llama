@@ -33,7 +33,7 @@ def responder(user_input, shouldPrint = True):
 def image_responder(images , shouldPrint = True):
     messages.append({
                 'role': 'SYSTEM',
-                'content': "The caller is sharing image feed while they are in distress, use this to update your knowledge and provide the necessary help and guidance",
+                'content': "The caller is sharing image feed while they are in distress, use this to update your knowledge base.",
                 'images': images
             })
     response = ollama.chat(
