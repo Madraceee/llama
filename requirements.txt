@@ -1,10 +1,11 @@
 transformers
 ollama
 openai-whisper
-SpeachRecognition
+SpeechRecognition
 langdetect
 transliterate
-indic_transliterate
+indic_transliteration
 unidecode
 pypinyin
 gtts
+opencv-python

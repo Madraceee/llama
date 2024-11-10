@@ -30,7 +30,7 @@ def responder(user_input, shouldPrint = True):
         print(response['message']['content'], end = "", flush=True)
 
     if "**END CALL**" in response['message']['content']:
-        return [False]
+        return [False, response['message']['content']]
     return [True, response['message']['content']]
 
 def image_responder(images , shouldPrint = True):
